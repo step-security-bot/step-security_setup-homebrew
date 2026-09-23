@@ -1,0 +1,21 @@
+import { exec } from "@actions/exec"
+import * as core from "@actions/core"
+import {validateSubscription} from "./subscription";
+
+// GitHub Actions does not support shell `post` actions and thus requires a JS wrapper.
+try {
+  await validateSubscription()
+  await exec("/bin/bash", [
+    new URL("./main.sh", import.meta.url).pathname,
+    core.getInput("core"),
+    core.getInput("cask"),
+    core.getInput("debug"),
+    core.getInput("token"),
+    core.getInput("stable"),
+    core.getInput("brew-gh-api-token"),
+  ])
+} catch (error) {
+  if (!(error instanceof Error)) throw error
+
+  core.setFailed(error.message)
+}
