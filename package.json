@@ -1,0 +1,17 @@
+{
+  "name": "setup-homebrew",
+  "main": "main.ts",
+  "dependencies": {
+    "@actions/core": "^3.0.1",
+    "@actions/exec": "^3.0.0",
+    "axios": "^1.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@vercel/ncc": "^0.45.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "build": "ncc build main.ts -o dist/main && ncc build post.ts -o dist/post"
+  }
+}

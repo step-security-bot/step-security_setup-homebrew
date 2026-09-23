@@ -1,0 +1,148 @@
+name: Setup Homebrew
+
+on:
+  pull_request:
+
+permissions: { }
+
+jobs:
+  setup:
+    if: github.actor != 'dependabot[bot]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            key: macos
+            stable: false
+            name: macOS
+          - os: ubuntu-24.04
+            key: ubuntu-24
+            stable: false
+            name: Ubuntu (24.04)
+          - os: ubuntu-slim
+            key: ubuntu-slim
+            stable: false
+            name: Ubuntu (slim)
+          - os: ubuntu-latest
+            key: docker-root
+            stable: false
+            container: '{"image":"ghcr.io/homebrew/brew:main","options":"--user=root"}'
+            name: Docker (root)
+          - os: ubuntu-latest
+            key: docker-linuxbrew
+            stable: false
+            container: '{"image":"ghcr.io/homebrew/brew:main","options":"--user=linuxbrew"}'
+            name: Docker (linuxbrew)
+          - os: ubuntu-latest
+            key: docker-linuxbrew-stable
+            stable: true
+            container: '{"image":"ghcr.io/homebrew/brew:latest","options":"--user=linuxbrew"}'
+            name: Docker (stable)
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container && fromJSON(matrix.container) || '' }}
+    name: Setup Homebrew on ${{ matrix.name }}
+    steps:
+      - name: Checkout
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]
+          then
+            # Allow writing under linuxbrew user
+            orig_uid="$(stat --printf='%u' "$GITHUB_WORKSPACE")"
+            sudo chown -R "$(whoami)" "$GITHUB_WORKSPACE" "$HOME"
+          fi
+
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git init
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --force "$GITHUB_SHA"
+
+          if [ "$RUNNER_OS" = "Linux" ]
+          then
+            # Reset ownership so we test if the equivalent in setup-homebrew works.
+            sudo chown -R "$orig_uid" "$GITHUB_WORKSPACE" "$HOME"
+          fi
+
+      - name: Check syntax
+        run: bash -n *.sh
+
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: ./
+        with:
+          stable: ${{ matrix.stable }}
+
+      - name: Cache Homebrew Bundler RubyGems
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: ${{ matrix.key }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: ${{ matrix.key }}-rubygems-
+
+      - name: Install Homebrew Bundler RubyGems
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: brew install-bundler-gems
+
+      - run: brew test-bot --only-cleanup-before
+
+      - run: brew test-bot --only-setup
+        env:
+          HOMEBREW_TEST_BOT_IGNORE_DOCTOR_FAILURE: ${{ matrix.key == 'ubuntu-slim' && '1' || null }}
+
+      - run: brew info hello
+
+      - run: brew install shellcheck
+
+      - run: shellcheck *.sh
+
+  setup-dependabot:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/homebrew/brew:main
+      options: --user=linuxbrew
+    name: Setup Homebrew on Docker (linuxbrew)
+    steps:
+      - name: Checkout
+        run: |
+          orig_uid="$(stat --printf='%u' "$GITHUB_WORKSPACE")"
+          sudo chown -R "$(whoami)" "$GITHUB_WORKSPACE" "$HOME"
+
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git init
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --force "$GITHUB_SHA"
+
+          sudo chown -R "$orig_uid" "$GITHUB_WORKSPACE" "$HOME"
+
+      - name: Check syntax
+        run: bash -n *.sh
+
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: ./
+
+      - name: Cache Homebrew Bundler RubyGems
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+          key: docker-linuxbrew-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+          restore-keys: docker-linuxbrew-rubygems-
+
+      - name: Install Homebrew Bundler RubyGems
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: brew install-bundler-gems
+
+      - run: brew test-bot --only-cleanup-before
+
+      - run: brew test-bot --only-setup
+
+      - run: brew info hello
+
+      - run: brew install shellcheck
+
+      - run: shellcheck *.sh
